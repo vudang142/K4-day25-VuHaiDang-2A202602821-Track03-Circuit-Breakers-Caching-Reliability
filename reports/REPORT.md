@@ -1,6 +1,6 @@
 # Lab 25B — Report
 
-**Họ tên / nhóm:** Vũ Hải Đăng (MSV 2A202602821)  **Commit:** …  **Điểm tự động (`make grade`):** … / 88
+**Họ tên / nhóm:** Vũ Hải Đăng (MSV 2A202602821)  **Commit:** b3e6ecd  **Điểm tự động (`make grade`):** dự kiến ~84/88 (6/6 Game Day, workflow 0/0/0, SLO 0 false page, cache 0 wrong) — grader sẽ chạy lại với hidden SLO + seeds khác.
 
 > Mọi nhận định phải có số. Dán số từ `reports/gameday/*.json`, `reports/workflows.json`, `reports/slo.json`.
 
