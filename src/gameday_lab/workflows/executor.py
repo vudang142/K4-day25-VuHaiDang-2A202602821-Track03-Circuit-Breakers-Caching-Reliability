@@ -18,6 +18,7 @@ Tests: tests/test_executor.py, then `make workflows`.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -28,14 +29,19 @@ T = TypeVar("T")
 
 
 def idempotency_key(req: RefundRequest, step: str) -> str:
-    """TODO(student): a key that is identical for every retry / restart of the same
-    side effect of the same session, and different across sessions and steps."""
-    raise NotImplementedError("TODO(student): idempotency_key()")
+    """A key that is identical for every retry / restart of the same
+    side effect of the same session, and different across sessions and steps.
+
+    Stable across processes/restarts. Same session + same step -> same key.
+    Different session or different step -> different key.
+    """
+    payload = f"{req.session_id}|{req.order_id}|{req.amount_cents}|{req.customer_email}|{step}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def checkpoint_key(req: RefundRequest, step: str) -> str:
-    """TODO(student): DurableStore key under which the result of ``step`` is saved."""
-    raise NotImplementedError("TODO(student): checkpoint_key()")
+    """DurableStore key under which the result of ``step`` is saved."""
+    return f"ckpt:{req.session_id}:{step}"
 
 
 class WorkflowExecutor:
@@ -45,9 +51,16 @@ class WorkflowExecutor:
         self.max_attempts = max_attempts
 
     def _retry(self, fn: Callable[[], T]) -> T:
-        """TODO(student): call fn(); retry on ServiceError / ServiceTimeout up to
+        """Call fn(); retry on ServiceError / ServiceTimeout up to
         ``max_attempts`` times (re-raise the last one). Never catch WorkerCrash."""
-        raise NotImplementedError("TODO(student): _retry()")
+        last: Exception | None = None
+        for _ in range(self.max_attempts):
+            try:
+                return fn()
+            except (ServiceError, ServiceTimeout) as exc:
+                last = exc
+        assert last is not None
+        raise last
 
     def _step(self, req: RefundRequest, state: dict[str, Any], step: str) -> Any:
         """PROVIDED: execute one step. ``state`` holds results of earlier steps."""
@@ -68,11 +81,23 @@ class WorkflowExecutor:
         raise ValueError(step)
 
     def run(self, req: RefundRequest) -> dict[str, Any]:
-        """TODO(student): run every step in STEPS for ``req``.
+        """Run every step in STEPS for ``req``.
 
         * a step whose checkpoint already exists in ``self.store`` was done by a
           previous (crashed) worker: load its result into ``state`` and skip it
         * otherwise execute it with ``self._step`` and checkpoint the result
         * return {"status": "done", **state}
         """
-        raise NotImplementedError("TODO(student): run()")
+        state: dict[str, Any] = {}
+        for step in STEPS:
+            ck = checkpoint_key(req, step)
+            cached = self.store.get(ck)
+            if cached is not None:
+                state[step] = cached
+                continue
+            # execute first, then checkpoint — otherwise a crash mid-call would
+            # mark a side effect as "done" without it ever having happened
+            result = self._step(req, state, step)
+            self.store.put(ck, result)
+            state[step] = result
+        return {"status": "done", **state}
